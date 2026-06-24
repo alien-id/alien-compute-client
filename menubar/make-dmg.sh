@@ -37,7 +37,10 @@ echo "==> Built $(pwd)/$DMG ($(du -h "$DMG" | cut -f1))"
 #       --apple-id <APPLE_ID> --team-id <TEAMID> --password <app-specific-pw>
 NOTARY_PROFILE="${NOTARY_PROFILE:-AC_NOTARY}"
 
-if codesign -dvv "$APP" 2>&1 | grep -q 'Authority=Developer ID Application'; then
+# Capture the signature once. Piping into `grep -q` would close the pipe early
+# and SIGPIPE codesign, which under `set -o pipefail` makes the test look false.
+APP_SIG="$(codesign -dvv "$APP" 2>&1 || true)"
+if grep -q 'Authority=Developer ID Application' <<<"$APP_SIG"; then
   if xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1; then
     echo "==> Notarizing $DMG (profile: $NOTARY_PROFILE) — can take a few minutes…"
     if ! xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait; then
@@ -52,7 +55,7 @@ if codesign -dvv "$APP" 2>&1 | grep -q 'Authority=Developer ID Application'; the
     spctl -a -t exec -vv "$APP" 2>&1 | sed 's/^/    /' || true
     echo "==> Notarized & stapled: $(pwd)/$DMG"
   else
-    team="$(codesign -dvv "$APP" 2>&1 | awk -F= '/TeamIdentifier/{print $2}')"
+    team="$(awk -F= '/TeamIdentifier/{print $2}' <<<"$APP_SIG")"
     echo "!!  Developer ID signed, but notary profile '$NOTARY_PROFILE' was not found."
     echo "    Create it once, then re-run ./make-dmg.sh:"
     echo "      xcrun notarytool store-credentials $NOTARY_PROFILE \\"
