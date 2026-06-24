@@ -53,10 +53,32 @@ cat > "$BUNDLE/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Ad-hoc sign (inner binary first, then the bundle) so it runs cleanly locally.
-codesign --force --sign - "$BUNDLE/Contents/Resources/fleet-proxy" 2>/dev/null || true
-codesign --force --sign - "$BUNDLE/Contents/MacOS/$EXEC" 2>/dev/null || true
-codesign --force --sign - "$BUNDLE" 2>/dev/null || true
+# --- Code signing -----------------------------------------------------------
+# Prefer a "Developer ID Application" identity (required for notarization);
+# fall back to ad-hoc so local dev builds still run on this Mac.
+#   Override the identity with CODESIGN_ID="Developer ID Application: … (TEAMID)".
+SIGN_ID="${CODESIGN_ID:-}"
+if [[ -z "$SIGN_ID" ]]; then
+  SIGN_ID="$(security find-identity -v -p codesigning 2>/dev/null \
+             | awk -F'"' '/Developer ID Application/{print $2; exit}')"
+fi
+
+if [[ -n "$SIGN_ID" ]]; then
+  echo "==> Signing with Developer ID + hardened runtime: $SIGN_ID"
+  CS_OPTS=(--force --options runtime --timestamp --sign "$SIGN_ID")
+else
+  echo "==> No Developer ID identity found — ad-hoc signing (NOT notarizable)."
+  CS_OPTS=(--force --sign -)
+fi
+
+# Sign inner Mach-O binaries first, then the bundle.
+codesign "${CS_OPTS[@]}" "$BUNDLE/Contents/Resources/fleet-proxy"
+codesign "${CS_OPTS[@]}" "$BUNDLE/Contents/MacOS/$EXEC"
+codesign "${CS_OPTS[@]}" "$BUNDLE"
+
+if [[ -n "$SIGN_ID" ]]; then
+  codesign --verify --deep --strict --verbose=2 "$BUNDLE"
+fi
 
 echo "==> Built $(pwd)/$BUNDLE"
 echo "    Run with:  open \"$BUNDLE\"     (look for the flying-saucer icon in the menu bar)"
