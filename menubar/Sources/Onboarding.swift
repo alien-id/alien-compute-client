@@ -52,13 +52,13 @@ final class NeonButton: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         let r = bounds.insetBy(dx: 3, dy: 3)
-        let path = NSBezierPath(roundedRect: r, xRadius: r.height / 2, yRadius: r.height / 2)
+        let path = NSBezierPath(rect: r)
 
         NSGraphicsContext.saveGraphicsState()
         if isEnabledState {
             let glow = NSShadow()
             glow.shadowColor = accentColor.withAlphaComponent(0.85)
-            glow.shadowBlurRadius = 14
+            glow.shadowBlurRadius = 6
             glow.shadowOffset = .zero
             glow.set()
         }
@@ -86,6 +86,7 @@ final class OnboardingController: NSObject, NSWindowDelegate {
 
     private var window: NSWindow!
     private var stack: NSStackView!
+    private var terminal: AlienTerminalView!
     private var connectButton: NeonButton!
     private var spinner: NSProgressIndicator!
     private var statusLabel: NSTextField!
@@ -125,19 +126,25 @@ final class OnboardingController: NSObject, NSWindowDelegate {
         w.contentView = GradientBackgroundView()
         window = w
 
-        // Logo with a soft glow.
-        let logo = NSImageView(image: Saucer.iconImage(124))
+        // Small glowing logo above the live alien terminal.
+        let logo = NSImageView(image: Saucer.iconImage(64))
         logo.wantsLayer = true
         logo.shadow = {
             let s = NSShadow()
-            s.shadowColor = accentColor.withAlphaComponent(0.7)
-            s.shadowBlurRadius = 24
+            s.shadowColor = accentColor.withAlphaComponent(0.4)
+            s.shadowBlurRadius = 4
             s.shadowOffset = .zero
             return s
         }()
         logo.translatesAutoresizingMaskIntoConstraints = false
-        logo.widthAnchor.constraint(equalToConstant: 124).isActive = true
-        logo.heightAnchor.constraint(equalToConstant: 124).isActive = true
+        logo.widthAnchor.constraint(equalToConstant: 64).isActive = true
+        logo.heightAnchor.constraint(equalToConstant: 64).isActive = true
+
+        // Animated Marain-nonary "Culture terminal".
+        terminal = AlienTerminalView()
+        terminal.translatesAutoresizingMaskIntoConstraints = false
+        terminal.widthAnchor.constraint(equalToConstant: columnWidth).isActive = true
+        terminal.heightAnchor.constraint(equalToConstant: terminal.intrinsicContentSize.height).isActive = true
 
         let title = NSTextField(labelWithAttributedString: NSAttributedString(
             string: "ALIEN COMPUTE",
@@ -150,11 +157,7 @@ final class OnboardingController: NSObject, NSWindowDelegate {
                          .foregroundColor: accentColor, .kern: 2.5]))
 
         let desc = NSTextField(wrappingLabelWithString:
-            "Run a private, OpenAI-compatible AI endpoint on your Mac, served by a "
-            + "decentralized network of GPU providers.\n\n"
-            + "Connecting creates a wallet on this Mac and claims a free balance of "
-            + "testnet tokens. Those tokens pay for model inference — every request "
-            + "is metered and settled with end-to-end encrypted micro-payments.")
+            "A private AI endpoint on your Mac, powered by a decentralized GPU network.")
         desc.alignment = .center
         desc.font = .systemFont(ofSize: 13)
         desc.textColor = NSColor(white: 0.72, alpha: 1)
@@ -194,7 +197,7 @@ final class OnboardingController: NSObject, NSWindowDelegate {
         urlField.font = .monospacedSystemFont(ofSize: 13, weight: .medium)
         urlField.alignment = .center
         urlField.wantsLayer = true
-        urlField.layer?.cornerRadius = 6
+        urlField.layer?.cornerRadius = 0
         urlField.translatesAutoresizingMaskIntoConstraints = false
         urlField.widthAnchor.constraint(equalToConstant: 300).isActive = true
         urlField.heightAnchor.constraint(equalToConstant: 30).isActive = true
@@ -212,10 +215,12 @@ final class OnboardingController: NSObject, NSWindowDelegate {
         doneButton.onClick = { [weak self] in self?.doneTapped() }
         doneButton.isHidden = true
 
-        stack = NSStackView(views: [logo, title, tagline, desc, connectButton, statusRow, urlStack, doneButton])
+        stack = NSStackView(views: [logo, terminal, title, tagline, desc, connectButton, statusRow, urlStack, doneButton])
         stack.orientation = .vertical
         stack.alignment = .centerX
         stack.spacing = 16
+        stack.setCustomSpacing(14, after: logo)
+        stack.setCustomSpacing(18, after: terminal)
         stack.setCustomSpacing(6, after: title)
         stack.setCustomSpacing(22, after: desc)
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -336,6 +341,7 @@ final class OnboardingController: NSObject, NSWindowDelegate {
         guard !finished else { return }
         finished = true
         pollTimer?.invalidate()
+        terminal?.stopAnimating()
         UserDefaults.standard.set(true, forKey: "didOnboard")
         NSApp.setActivationPolicy(.accessory) // back to menu-bar-only
         onFinish()
