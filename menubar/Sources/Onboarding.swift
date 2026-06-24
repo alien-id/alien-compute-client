@@ -34,6 +34,7 @@ final class NeonButton: NSView {
     var onClick: (() -> Void)?
     var title: String { didSet { invalidateIntrinsicContentSize(); needsDisplay = true } }
     var isEnabledState = true { didSet { needsDisplay = true } }
+    private var isPressed = false { didSet { needsDisplay = true } }
     private let font = NSFont.systemFont(ofSize: 15, weight: .semibold)
 
     init(title: String) {
@@ -55,14 +56,18 @@ final class NeonButton: NSView {
         let path = NSBezierPath(rect: r)
 
         NSGraphicsContext.saveGraphicsState()
-        if isEnabledState {
+        if isEnabledState && !isPressed {
             let glow = NSShadow()
             glow.shadowColor = accentColor.withAlphaComponent(0.85)
             glow.shadowBlurRadius = 6
             glow.shadowOffset = .zero
             glow.set()
         }
-        (isEnabledState ? accentColor : NSColor(white: 0.28, alpha: 1)).setFill()
+        let fill: NSColor
+        if !isEnabledState { fill = NSColor(white: 0.28, alpha: 1) }
+        else if isPressed { fill = accentColor.blended(withFraction: 0.30, of: .black) ?? accentColor }
+        else { fill = accentColor }
+        fill.setFill()
         path.fill()
         NSGraphicsContext.restoreGraphicsState()
 
@@ -75,7 +80,38 @@ final class NeonButton: NSView {
                                  withAttributes: attrs)
     }
 
-    override func mouseDown(with event: NSEvent) { if isEnabledState { onClick?() } }
+    override func mouseDown(with event: NSEvent) {
+        guard isEnabledState else { return }
+        isPressed = true
+    }
+    override func mouseDragged(with event: NSEvent) {
+        guard isEnabledState else { return }
+        isPressed = bounds.contains(convert(event.locationInWindow, from: nil))
+    }
+    override func mouseUp(with event: NSEvent) {
+        guard isEnabledState else { return }
+        let inside = isPressed && bounds.contains(convert(event.locationInWindow, from: nil))
+        isPressed = false
+        if inside { onClick?() }
+    }
+}
+
+// MARK: - Vertically-centered text field cell
+
+/// `NSTextField` top-aligns its text inside a taller frame; this cell centers
+/// it vertically. One `drawingRect` override covers drawing, editing and
+/// selection.
+final class VCenteredTextFieldCell: NSTextFieldCell {
+    override func drawingRect(forBounds rect: NSRect) -> NSRect {
+        var r = super.drawingRect(forBounds: rect)
+        let textHeight = cellSize(forBounds: rect).height
+        let delta = r.height - textHeight
+        if delta > 0 {
+            r.origin.y += delta / 2
+            r.size.height = textHeight
+        }
+        return r
+    }
 }
 
 // MARK: - Onboarding window
@@ -126,19 +162,19 @@ final class OnboardingController: NSObject, NSWindowDelegate {
         w.contentView = GradientBackgroundView()
         window = w
 
-        // Small glowing logo above the live alien terminal.
-        let logo = NSImageView(image: Saucer.iconImage(64))
+        // Line-drawn saucer hero above the live alien terminal.
+        let logo = NSImageView(image: Saucer.lineArtImage(104))
         logo.wantsLayer = true
         logo.shadow = {
             let s = NSShadow()
-            s.shadowColor = accentColor.withAlphaComponent(0.4)
-            s.shadowBlurRadius = 4
+            s.shadowColor = accentColor.withAlphaComponent(0.45)
+            s.shadowBlurRadius = 5
             s.shadowOffset = .zero
             return s
         }()
         logo.translatesAutoresizingMaskIntoConstraints = false
-        logo.widthAnchor.constraint(equalToConstant: 64).isActive = true
-        logo.heightAnchor.constraint(equalToConstant: 64).isActive = true
+        logo.widthAnchor.constraint(equalToConstant: 104).isActive = true
+        logo.heightAnchor.constraint(equalToConstant: 104).isActive = true
 
         // Animated Marain-nonary "Culture terminal".
         terminal = AlienTerminalView()
@@ -188,6 +224,9 @@ final class OnboardingController: NSObject, NSWindowDelegate {
         urlTitle.textColor = NSColor(white: 0.55, alpha: 1)
 
         urlField = NSTextField(string: proxy.apiBase)
+        let urlCell = VCenteredTextFieldCell(textCell: proxy.apiBase)
+        urlCell.usesSingleLineMode = true
+        urlField.cell = urlCell
         urlField.isEditable = false
         urlField.isSelectable = true
         urlField.isBezeled = false

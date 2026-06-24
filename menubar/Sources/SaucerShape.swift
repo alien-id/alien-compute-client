@@ -177,6 +177,91 @@ enum Saucer {
         }
     }
 
+    // MARK: Line-art hero (blueprint saucer)
+
+    /// Line-drawn flying saucer — crisp neon strokes on a clear background.
+    /// Used as the onboarding hero above the terminal.
+    static func lineArtImage(_ side: CGFloat,
+                             color: NSColor = NSColor(srgbRed: 0.30, green: 0.85, blue: 1.0, alpha: 1)) -> NSImage {
+        NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+            drawLineArt(in: rect, color: color)
+            return true
+        }
+    }
+
+    static func drawLineArt(in b: CGRect, color: NSColor) {
+        let w = b.width, h = b.height
+        let lw = max(1, w * 0.018)
+        let cx = b.midX
+        let midY = b.minY + 0.52 * h          // disc centre-line
+        let halfW = 0.46 * w
+        let topRise = 0.11 * h                 // upper hull bulge
+        let botDrop = 0.15 * h                 // underside dip
+
+        color.setStroke()
+
+        // Hull (lens): top arc + underside arc meeting at the side tips.
+        let leftTip = CGPoint(x: cx - halfW, y: midY)
+        let rightTip = CGPoint(x: cx + halfW, y: midY)
+        let hull = NSBezierPath()
+        hull.move(to: leftTip)
+        hull.curve(to: rightTip,
+                   controlPoint1: CGPoint(x: cx - halfW * 0.5, y: midY + topRise),
+                   controlPoint2: CGPoint(x: cx + halfW * 0.5, y: midY + topRise))
+        hull.curve(to: leftTip,
+                   controlPoint1: CGPoint(x: cx + halfW * 0.45, y: midY - botDrop),
+                   controlPoint2: CGPoint(x: cx - halfW * 0.45, y: midY - botDrop))
+        hull.lineWidth = lw
+        hull.lineJoinStyle = .round
+        hull.stroke()
+
+        // Dome: its feet sit exactly on the hull's top arc (sampled at symmetric
+        // t on the same Bézier), so the cupola rises from the body instead of
+        // crossing into it.
+        func hullTop(_ t: CGFloat) -> CGPoint {
+            let u = 1 - t
+            return CGPoint(
+                x: u*u*u * leftTip.x + 3*u*u*t * (cx - halfW * 0.5)
+                 + 3*u*t*t * (cx + halfW * 0.5) + t*t*t * rightTip.x,
+                y: u*u*u * midY + 3*u*u*t * (midY + topRise)
+                 + 3*u*t*t * (midY + topRise) + t*t*t * midY)
+        }
+        let footL = hullTop(0.30)
+        let footR = hullTop(0.70)
+        let domeH = 0.22 * h
+        let dome = NSBezierPath()
+        dome.move(to: footL)
+        dome.curve(to: footR,
+                   controlPoint1: CGPoint(x: footL.x, y: footL.y + domeH),
+                   controlPoint2: CGPoint(x: footR.x, y: footR.y + domeH))
+        dome.lineWidth = lw
+        dome.stroke()
+
+        // Port windows along the front face.
+        let winR = 0.034 * w
+        let winY = midY - 0.015 * h
+        let wins = NSBezierPath()
+        for i in -1...1 {
+            let x = cx + CGFloat(i) * 0.18 * w
+            wins.appendOval(in: CGRect(x: x - winR, y: winY - winR, width: winR * 2, height: winR * 2))
+        }
+        wins.lineWidth = max(1, lw * 0.8)
+        wins.stroke()
+
+        // Tractor beam: dashed guide lines fanning down.
+        let beam = NSBezierPath()
+        beam.lineWidth = max(1, lw * 0.7)
+        beam.setLineDash([w * 0.03, w * 0.03], count: 2, phase: 0)
+        let beamTopY = midY - botDrop
+        let beamBotY = b.minY + 0.10 * h
+        for fx in [-0.12, 0.0, 0.12] as [CGFloat] {
+            beam.move(to: CGPoint(x: cx + fx * w * 0.6, y: beamTopY))
+            beam.line(to: CGPoint(x: cx + fx * w * 1.4, y: beamBotY))
+        }
+        color.withAlphaComponent(0.4).setStroke()
+        beam.stroke()
+    }
+
     private static func clipFill(_ path: NSBezierPath, gradient: NSGradient, angle: CGFloat) {
         NSGraphicsContext.saveGraphicsState()
         path.addClip()
